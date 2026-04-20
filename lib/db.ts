@@ -145,7 +145,7 @@ export async function createLearner(data: {
   admission_number?: string; date_of_birth?: string
   lesson_type?: string
   year_level_id?: string; class_group_id?: string
-  exam_group_id?: string
+  exam_group_id?: string; tutor_id?: string 
 }) {
   const hash = await bcrypt.hash(data.password || 'Password@123', 12)
   const { data: user, error: uErr } = await supabaseAdmin.from('users').insert({
@@ -171,7 +171,7 @@ export async function createLearner(data: {
 export async function updateLearner(learnerId: string, data: {
   name?: string; phone?: string; year_level_id?: string; class_group_id?: string
   admission_number?: string; status?: string; is_active?: boolean; password?: string
-  lesson_type?: string; exam_group_id?: string
+  lesson_type?: string; exam_group_id?: string; tutor_id?: string 
 }) {
   const { data: learner } = await supabaseAdmin.from('learners').select('user_id').eq('id', learnerId).single()
   if (!learner) throw new Error('Learner not found')
@@ -219,7 +219,7 @@ export async function createLesson(data: {
   year_level_id?: string; class_group_id?: string; subject_id: string;
   title: string; lesson_date: string; lesson_type: string;
   one_to_one_learner_id?: string; notes?: string;
-  educator_id?: string; created_by: string
+  educator_id?: string; created_by: string; 
 }) {
   const { data: lesson, error } = await supabaseAdmin.from('lessons').insert({
     year_level_id:         data.year_level_id || null,
@@ -358,7 +358,7 @@ export async function startSubmission(assignmentId: string, learnerUserId: strin
 export async function submitAnswers(submissionId: string, answers: { question_id: string; option_id: string }[], learnerUserId: string) {
   // Verify ownership
   const { data: sub } = await supabaseAdmin.from('assignment_submissions')
-    .select('id, assignment_id, learner_id, max_score, learners(user_id)')
+    .select('id, assignment_id, learner_id, max_score, status, learners(user_id)')
     .eq('id', submissionId).single()
   if (!sub || (sub.learners as any)?.user_id !== learnerUserId) throw new Error('Forbidden')
   if (sub.status === 'submitted') throw new Error('Already submitted')
