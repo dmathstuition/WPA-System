@@ -1,127 +1,226 @@
-import { getSession } from '@/lib/auth'
-import { supabaseAdmin } from '@/lib/supabase'
+'use client'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { Topbar } from '@/components/layout/topbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/empty-state'
-import { ClipboardList, Plus, Copy, ExternalLink } from 'lucide-react'
+import { ClipboardList, Plus, Copy, Check, ExternalLink, ChevronDown, ChevronUp, Trash2, Users } from 'lucide-react'
 import Link from 'next/link'
+import { fetchArray, postJSON } from '@/lib/fetch'
 
-export default async function EducatorAssignmentsPage() {
-  const session = await getSession()
-  if (!session) return null
+const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
+  scored:    { bg: 'bg-emerald-100', text: 'text-emerald-700', label: 'Completed' },
+  submitted: { bg: 'bg-blue-100',    text: 'text-blue-700',    label: 'Submitted' },
+  pending:   { bg: 'bg-amber-100',   text: 'text-amber-700',   label: 'Pending' },
+  missed:    { bg: 'bg-red-100',     text: 'text-red-600',     label: 'Missed' },
+}
 
-  const { data: edu } = await supabaseAdmin
-    .from('educators').select('id').eq('user_id', session.id).single()
+export default function AssignmentsPage() {
+  const router = useRouter()
+  const [assignments, setAssignments] = useState<any[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [copied, setCopied]           = useState('')
+  const [expanded, setExpanded]       = useState<string | null>(null)
+  const [deleting, setDeleting]       = useState('')
 
-  const assignments = edu ? await (async () => {
-    const { data } = await supabaseAdmin
-      .from('assignments')
-      .select('id, title, deadline, is_published, share_url, assignment_type, created_at, lesson_id')
-      .eq('educator_id', edu.id)
-      .order('created_at', { ascending: false })
-    if (!data?.length) return []
-
-    const lessonIds = [...new Set(data.map((a: any) => a.lesson_id).filter(Boolean))]
-    const { data: lessons } = lessonIds.length
-      ? await supabaseAdmin.from('lessons').select('id, lesson_date, subject_id').in('id', lessonIds)
-      : { data: [] }
-    const subIds = [...new Set((lessons ?? []).map((l: any) => l.subject_id).filter(Boolean))]
-    const { data: subjects } = subIds.length
-      ? await supabaseAdmin.from('subjects').select('id, name').in('id', subIds)
-      : { data: [] }
-    const lMap = new Map((lessons  ?? []).map((l: any) => [l.id, l]))
-    const sMap = new Map((subjects ?? []).map((s: any) => [s.id, s]))
-
-    // Submission counts
-    const aIds = data.map((a: any) => a.id)
-    const { data: subs } = await supabaseAdmin
-      .from('assignment_submissions')
-      .select('assignment_id, status')
-      .in('assignment_id', aIds)
-    const subMap = new Map<string, { total: number; submitted: number; missed: number }>()
-    for (const s of subs ?? []) {
-      if (!subMap.has(s.assignment_id)) subMap.set(s.assignment_id, { total:0, submitted:0, missed:0 })
-      const e = subMap.get(s.assignment_id)!
-      e.total++
-      if (s.status === 'submitted' || s.status === 'scored') e.submitted++
-      if (s.status === 'missed') e.missed++
-    }
-
-    return data.map((a: any) => {
-      const lesson = lMap.get(a.lesson_id)
-      return { ...a, lesson_date: lesson?.lesson_date ?? null, subject: sMap.get(lesson?.subject_id) ?? null, subs: subMap.get(a.id) ?? { total:0, submitted:0, missed:0 } }
+  function load() {
+    setLoading(true)
+    fetchArray('/api/educator/assignments').then(data => {
+      setAssignments(data)
+      setLoading(false)
     })
-  })() : []
+  }
+
+  useEffect(() => { load() }, [])
+
+  function copyLink(url: string) {
+    navigator.clipboard.writeText(url)
+    setCopied(url)
+    setTimeout(() => setCopied(''), 2000)
+  }
+
+  async function deleteAssignment(id: string) {
+    if (!confirm('Delete this assignment? Submission records will be removed but the stats have been captured.')) return
+    setDeleting(id)
+    const { ok, data } = await postJSON('/api/educator/assignments', { id }, 'DELETE')
+    if (ok) {
+      load()
+      setExpanded(null)
+    } else {
+      alert(data?.error ?? 'Cannot delete')
+    }
+    setDeleting('')
+  }
 
   const now = new Date()
 
   return (
     <>
-      <Topbar user={session} title="My Assignments" subtitle="Assignments you have created" />
+      <Topbar user={{ id:'', name:'Educator', email:'', role:'educator' }}
+              title="My Assignments" subtitle="Manage assignments and track submissions" />
       <div className="p-5">
         <div className="flex items-center justify-between mb-5">
-          <p className="text-[13px] font-bold text-slate-800">{assignments.length} assignment{assignments.length !== 1 ? 's' : ''}</p>
+          <p className="text-[13px] font-bold text-slate-800">
+            {loading ? 'Loading…' : assignments.length + ' assignment' + (assignments.length !== 1 ? 's' : '')}
+          </p>
           <Link href="/educator/assignments/new">
             <Button size="sm"><Plus size={13} /> Create Assignment</Button>
           </Link>
         </div>
 
-        {assignments.length === 0 ? (
-          <EmptyState message="No assignments yet. Create one after locking attendance." icon={<ClipboardList size={20} />} />
+        {loading ? (
+          <div className="py-14 text-center">
+            <div className="w-7 h-7 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-3" />
+            <p className="text-[12.5px] text-slate-400">Loading assignments…</p>
+          </div>
+        ) : assignments.length === 0 ? (
+          <EmptyState message="No assignments yet. Lock attendance on a lesson first, then create an assignment." icon={<ClipboardList size={20} />} />
         ) : (
-          <div className="space-y-3">
+          <div className="space-y-4">
             {assignments.map((a: any) => {
-              const isExpired = a.deadline && new Date(a.deadline) < now
+              const deadline  = a.deadline ? new Date(a.deadline) : null
+              const isExpired = deadline ? deadline < now : false
+              const isOpen    = expanded === a.id
+              const subs      = a.submissions ?? []
+              const stats     = a.stats ?? { total:0, submitted:0, scored:0, pending:0, missed:0 }
+
               return (
-                <div key={a.id} className="bg-white rounded-xl border border-slate-100 shadow-sm p-4">
-                  <div className="flex items-start justify-between gap-3 flex-wrap">
-                    <div className="min-w-0">
-                      <p className="text-[13px] font-bold text-slate-800 truncate">{a.title}</p>
-                      <div className="flex items-center gap-2 mt-1 flex-wrap">
-                        {a.subject && <Badge variant="info">{a.subject.name}</Badge>}
-                        {a.lesson_date && <span className="text-[10.5px] text-slate-400">{a.lesson_date}</span>}
-                        <Badge variant={a.assignment_type === 'pdf' ? 'teal' : 'purple'}>
-                          {a.assignment_type === 'pdf' ? '📄 PDF' : '📝 CBT'}
-                        </Badge>
-                        <Badge variant={isExpired ? 'destructive' : 'success'}>
-                          {isExpired ? 'Closed' : 'Open'}
-                        </Badge>
-                      </div>
-                      {a.deadline && (
-                        <p className="text-[10.5px] text-slate-400 mt-1">
-                          Due: {new Date(a.deadline).toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <div className="text-right">
-                        <p className="text-[11px] font-bold text-slate-700">{a.subs.submitted}/{a.subs.total}</p>
-                        <p className="text-[9.5px] text-slate-400">submitted</p>
-                      </div>
-                      {a.subs.missed > 0 && (
-                        <div className="text-right">
-                          <p className="text-[11px] font-bold text-red-500">{a.subs.missed}</p>
-                          <p className="text-[9.5px] text-slate-400">missed</p>
+                <div key={a.id} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
+                  {/* Header */}
+                  <div className="p-5">
+                    <div className="flex items-start justify-between gap-3 flex-wrap">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-[13.5px] font-bold text-slate-800">{a.title}</p>
+                        <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+                          {a.subject?.name && <Badge variant="teal">{a.subject.name}</Badge>}
+                          {a.lesson_date && <span className="text-[10.5px] text-slate-400">{a.lesson_date}</span>}
+                          <Badge variant={a.assignment_type === 'pdf' ? 'info' : 'purple'}>
+                            {a.assignment_type === 'pdf' ? '📄 PDF' : '📝 CBT'}
+                          </Badge>
+                          <Badge variant={isExpired ? 'destructive' : 'success'}>
+                            {isExpired ? 'Closed' : 'Open'}
+                          </Badge>
                         </div>
-                      )}
+                        {deadline && (
+                          <p className="text-[10.5px] text-slate-400 mt-1.5">
+                            Due: {deadline.toLocaleDateString('en-GB', { day:'2-digit', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit' })}
+                          </p>
+                        )}
+                      </div>
+
+                      {/* Submission summary pills */}
+                      <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
+                        {stats.scored > 0 && (
+                          <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 text-[10.5px] font-bold">
+                            <Check size={10} /> {stats.scored} completed
+                          </span>
+                        )}
+                        {stats.pending > 0 && (
+                          <span className="px-2 py-1 rounded-lg bg-amber-50 text-amber-700 text-[10.5px] font-bold">
+                            {stats.pending} pending
+                          </span>
+                        )}
+                        {stats.missed > 0 && (
+                          <span className="px-2 py-1 rounded-lg bg-red-50 text-red-600 text-[10.5px] font-bold">
+                            {stats.missed} missed
+                          </span>
+                        )}
+                      </div>
                     </div>
                   </div>
 
-                  {/* Share link */}
+                  {/* Share link bar */}
                   {a.share_url && (
-                    <div className="mt-3 flex items-center gap-2 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-                      <p className="text-[10.5px] font-mono text-slate-500 truncate flex-1">{a.share_url}</p>
-                      <button
-                        onClick={() => { /* handled client-side */ }}
-                        className="flex-shrink-0 text-slate-400 hover:text-slate-600 transition"
-                        title="Copy link">
-                        <Copy size={13} />
+                    <div className="px-5 py-2.5 border-t border-slate-50 bg-slate-50/70 flex items-center gap-2">
+                      <p className="text-[10px] font-mono text-slate-400 truncate flex-1">{a.share_url}</p>
+                      <button onClick={() => copyLink(a.share_url)}
+                        className={`flex items-center gap-1 px-2 py-1 rounded-md text-[10.5px] font-semibold transition ${
+                          copied === a.share_url ? 'bg-emerald-100 text-emerald-700' : 'bg-white border border-slate-200 text-slate-500 hover:bg-slate-100'
+                        }`}>
+                        {copied === a.share_url ? <><Check size={10}/> Copied</> : <><Copy size={10}/> Copy</>}
                       </button>
-                      <a href={a.share_url} target="_blank" rel="noreferrer"
-                        className="flex-shrink-0 text-slate-400 hover:text-amber-600 transition">
-                        <ExternalLink size={13} />
-                      </a>
+                    </div>
+                  )}
+
+                  {/* Expand/collapse submissions */}
+                  <button onClick={() => setExpanded(isOpen ? null : a.id)}
+                    className="w-full px-5 py-2.5 border-t border-slate-100 flex items-center justify-between text-left hover:bg-slate-50 transition">
+                    <span className="flex items-center gap-2 text-[12px] font-semibold text-slate-600">
+                      <Users size={13} />
+                      {stats.total} learner{stats.total !== 1 ? 's' : ''} assigned
+                      {stats.submitted + stats.scored > 0 && (
+                        <span className="text-emerald-600">· {stats.submitted + stats.scored} done</span>
+                      )}
+                    </span>
+                    <div className="flex items-center gap-2">
+                      {isExpired && (
+                        <button onClick={(e) => { e.stopPropagation(); deleteAssignment(a.id) }}
+                          disabled={deleting === a.id}
+                          className="px-2 py-1 text-[10.5px] font-semibold text-red-500 hover:bg-red-50 rounded-md transition"
+                          title="Delete expired assignment">
+                          <Trash2 size={12} />
+                        </button>
+                      )}
+                      {isOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
+                    </div>
+                  </button>
+
+                  {/* Submissions table — expanded */}
+                  {isOpen && (
+                    <div className="border-t border-slate-100">
+                      {subs.length === 0 ? (
+                        <p className="px-5 py-6 text-center text-[12px] text-slate-400 italic">No learners assigned to this assignment yet.</p>
+                      ) : (
+                        <div className="divide-y divide-slate-50">
+                          {subs.map((s: any) => {
+                            const st = STATUS_STYLES[s.status] ?? STATUS_STYLES.pending
+                            return (
+                              <div key={s.id} className="px-5 py-3 flex items-center gap-3">
+                                {/* Learner avatar */}
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${
+                                  s.status === 'scored' || s.status === 'submitted'
+                                    ? 'bg-gradient-to-br from-emerald-400 to-emerald-600'
+                                    : s.status === 'missed'
+                                      ? 'bg-gradient-to-br from-red-400 to-red-600'
+                                      : 'bg-gradient-to-br from-amber-400 to-orange-500'
+                                }`}>
+                                  {(s.learner_name ?? '?').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0,2)}
+                                </div>
+
+                                {/* Name + time */}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-[12.5px] font-semibold text-slate-800 truncate">{s.learner_name}</p>
+                                  {s.submitted_at && (
+                                    <p className="text-[10px] text-slate-400 mt-0.5">
+                                      Submitted {new Date(s.submitted_at).toLocaleDateString('en-GB', { day:'2-digit', month:'short', hour:'2-digit', minute:'2-digit' })}
+                                    </p>
+                                  )}
+                                </div>
+
+                                {/* Score (if scored) */}
+                                {s.status === 'scored' && s.score != null && s.max_score != null && (
+                                  <div className="text-right flex-shrink-0 mr-2">
+                                    <p className={`text-[14px] font-black leading-none ${
+                                      (s.score / s.max_score) >= 0.7 ? 'text-emerald-600'
+                                      : (s.score / s.max_score) >= 0.5 ? 'text-amber-600'
+                                      : 'text-red-500'
+                                    }`}>{s.score}/{s.max_score}</p>
+                                    <p className="text-[9px] text-slate-400 mt-0.5">
+                                      {Math.round((s.score / s.max_score) * 100)}%
+                                    </p>
+                                  </div>
+                                )}
+
+                                {/* Status badge */}
+                                <span className={`px-2.5 py-1 rounded-full text-[10.5px] font-bold flex-shrink-0 ${st.bg} ${st.text}`}>
+                                  {st.label}
+                                </span>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>

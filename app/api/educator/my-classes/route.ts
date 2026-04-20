@@ -1,43 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
-
-export async function GET(req: NextRequest) {
-  try {
-    const session = await requireRole(['educator', 'admin', 'super_admin'])
-    const { data: edu } = await supabaseAdmin
-      .from('educators').select('id').eq('user_id', session.id).single()
-    if (!edu) return NextResponse.json([])
-
-    const { data: classes } = await supabaseAdmin
-      .from('educator_classes')
-      .select('id, educator_id, year_level_id, class_group_id, lesson_type, subject_id')
-      .eq('educator_id', edu.id)
-    if (!classes?.length) return NextResponse.json([])
-
-    const yearIds  = [...new Set(classes.map((c: any) => c.year_level_id).filter(Boolean))]
-    const groupIds = [...new Set(classes.map((c: any) => c.class_group_id).filter(Boolean))]
-    const subIds   = [...new Set(classes.map((c: any) => c.subject_id).filter(Boolean))]
-
-    const [yrRes, grRes, subRes] = await Promise.all([
-      yearIds.length  ? supabaseAdmin.from('year_levels').select('id,name').in('id', yearIds)   : { data: [] },
-      groupIds.length ? supabaseAdmin.from('class_groups').select('id,name').in('id', groupIds) : { data: [] },
-      subIds.length   ? supabaseAdmin.from('subjects').select('id,name').in('id', subIds)       : { data: [] },
-    ])
-    const yMap = new Map((yrRes.data  ?? []).map((x: any) => [x.id, x]))
-    const gMap = new Map((grRes.data  ?? []).map((x: any) => [x.id, x]))
-    const sMap = new Map((subRes.data ?? []).map((x: any) => [x.id, x]))
-
-    const enriched = classes.map((c: any) => ({
-      ...c,
-      year_name:    yMap.get(c.year_level_id)?.name  ?? '—',
-      group_name:   gMap.get(c.class_group_id)?.name ?? null,
-      subject_name: sMap.get(c.subject_id)?.name     ?? null,
-      year_levels:  yMap.get(c.year_level_id)        ?? null,
-      class_groups: gMap.get(c.class_group_id)       ?? null,
-    }))
-    return NextResponse.json(enriched)
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
-}
+export async function GET(){try{const s=await requireRole(['educator','admin','super_admin']);const{data:edu}=await supabaseAdmin.from('educators').select('id').eq('user_id',s.id).single();if(!edu)return NextResponse.json([]);const{data:cls}=await supabaseAdmin.from('educator_classes').select('id,educator_id,year_level_id,class_group_id,lesson_type,subject_id').eq('educator_id',edu.id);if(!cls?.length)return NextResponse.json([]);const yI=[...new Set(cls.map((c:any)=>c.year_level_id).filter(Boolean))],gI=[...new Set(cls.map((c:any)=>c.class_group_id).filter(Boolean))],sI=[...new Set(cls.map((c:any)=>c.subject_id).filter(Boolean))];const[yr,gr,su]=await Promise.all([yI.length?supabaseAdmin.from('year_levels').select('id,name').in('id',yI):{data:[]},gI.length?supabaseAdmin.from('class_groups').select('id,name').in('id',gI):{data:[]},sI.length?supabaseAdmin.from('subjects').select('id,name').in('id',sI):{data:[]}]);const yM=new Map((yr.data??[]).map((x:any)=>[x.id,x])),gM=new Map((gr.data??[]).map((x:any)=>[x.id,x])),sM=new Map((su.data??[]).map((x:any)=>[x.id,x]));return NextResponse.json(cls.map((c:any)=>({...c,year_name:yM.get(c.year_level_id)?.name??'—',group_name:gM.get(c.class_group_id)?.name??null,subject_name:sM.get(c.subject_id)?.name??null})))}catch(e:any){return NextResponse.json({error:e.message},{status:500})}}

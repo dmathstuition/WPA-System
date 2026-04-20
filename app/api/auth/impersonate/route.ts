@@ -1,40 +1,4 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/supabase'
 import { signToken, COOKIE_NAME } from '@/lib/auth'
-
-export async function GET(req: NextRequest) {
-  try {
-    const token = new URL(req.url).searchParams.get('token')
-    if (!token) return NextResponse.json({ error: 'Token required' }, { status: 400 })
-
-    const { data: imp } = await supabaseAdmin.from('impersonation_tokens')
-      .select('id, target_educator_id, expires_at, used_at').eq('token', token).single()
-
-    if (!imp)            return NextResponse.json({ error: 'Invalid token' },   { status: 401 })
-    if (imp.used_at)     return NextResponse.json({ error: 'Token already used' }, { status: 401 })
-    if (new Date(imp.expires_at) < new Date())
-                         return NextResponse.json({ error: 'Token expired' },   { status: 401 })
-
-    const { data: edu }  = await supabaseAdmin.from('educators')
-      .select('user_id').eq('id', imp.target_educator_id).single()
-    if (!edu) return NextResponse.json({ error: 'Educator not found' }, { status: 404 })
-
-    const { data: user } = await supabaseAdmin.from('users')
-      .select('id,name,email,role').eq('id', edu.user_id).single()
-    if (!user) return NextResponse.json({ error: 'User not found' }, { status: 404 })
-
-    await supabaseAdmin.from('impersonation_tokens')
-      .update({ used_at: new Date().toISOString() }).eq('id', imp.id)
-
-    const jwt = await signToken({ id: user.id, name: user.name, email: user.email, role: 'educator' })
-    const base = process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000'
-    const res  = NextResponse.redirect(`${base}/educator/dashboard`)
-    res.cookies.set(COOKIE_NAME, jwt, {
-      httpOnly: true, secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax', maxAge: 60 * 60 * 2, path: '/',
-    })
-    return res
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 500 })
-  }
-}
+export async function GET(req:NextRequest){try{const token=new URL(req.url).searchParams.get('token');if(!token)return NextResponse.json({error:'Token required'},{status:400});const{data:imp}=await supabaseAdmin.from('impersonation_tokens').select('id,target_educator_id,expires_at,used_at').eq('token',token).maybeSingle();if(!imp)return NextResponse.json({error:'Invalid token'},{status:401});if(imp.used_at)return NextResponse.json({error:'Token used'},{status:401});if(new Date(imp.expires_at)<new Date())return NextResponse.json({error:'Expired'},{status:401});const{data:edu}=await supabaseAdmin.from('educators').select('user_id').eq('id',imp.target_educator_id).single();if(!edu)return NextResponse.json({error:'Not found'},{status:404});const{data:user}=await supabaseAdmin.from('users').select('id,name,email,role').eq('id',edu.user_id).single();if(!user)return NextResponse.json({error:'Not found'},{status:404});await supabaseAdmin.from('impersonation_tokens').update({used_at:new Date().toISOString()}).eq('id',imp.id);const jwt=await signToken({id:user.id,name:user.name,email:user.email,role:'educator'});const base=process.env.NEXT_PUBLIC_APP_URL||'http://localhost:3000';const res=NextResponse.redirect(base+'/educator/dashboard');res.cookies.set(COOKIE_NAME,jwt,{httpOnly:true,secure:process.env.NODE_ENV==='production',sameSite:'lax',maxAge:60*60*2,path:'/'});return res}catch(e:any){return NextResponse.json({error:e.message},{status:500})}}

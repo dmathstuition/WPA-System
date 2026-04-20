@@ -110,3 +110,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 400 })
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try { await requireRole(['admin']); const{id}=await req.json(); if(!id) return NextResponse.json({error:'ID required'},{status:400}); const{data:edu}=await supabaseAdmin.from('educators').select('user_id').eq('id',id).single(); if(!edu) return NextResponse.json({error:'Not found'},{status:404}); await supabaseAdmin.from('educator_classes').delete().eq('educator_id',id); await supabaseAdmin.from('educators').delete().eq('id',id); await supabaseAdmin.from('users').delete().eq('id',edu.user_id); return NextResponse.json({ok:true}) } catch(e:any){return NextResponse.json({error:e.message},{status:500})}
+}

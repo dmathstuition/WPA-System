@@ -1,0 +1,2 @@
+import { SkeletonTopbar, SkeletonStatCards, SkeletonTable } from '@/components/shared/skeleton'
+export default function Loading(){return(<><SkeletonTopbar/><div className="p-5 max-w-2xl"><div className="bg-white rounded-xl border border-slate-100 shadow-sm p-6 animate-pulse space-y-4"><div className="h-4 bg-slate-200 rounded w-32"/><div className="h-32 bg-slate-50 rounded-xl border-2 border-dashed border-slate-200"/><div className="h-9 bg-amber-100 rounded-lg w-28"/></div></div></>)}
