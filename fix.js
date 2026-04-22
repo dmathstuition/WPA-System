@@ -1,4 +1,91 @@
-'use client'
+const fs = require('fs')
+const path = require('path')
+function w(p,c){const d=path.dirname(p);if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p,c,'utf8');console.log('  ✓',p)}
+
+console.log('━━━ LIVE NOTIFICATION BELL ━━━\n')
+
+// ═══ 1. NOTIFICATION API — GET (list) + PUT (mark read) ═════
+console.log('[1/2] API…')
+w('app/api/notifications/route.ts', `import { NextRequest, NextResponse } from 'next/server'
+import { requireRole } from '@/lib/auth'
+import { supabaseAdmin } from '@/lib/supabase'
+
+export async function GET(req: NextRequest) {
+  try {
+    const session = await requireRole(['admin', 'super_admin', 'educator'])
+
+    let userId = session.id
+
+    // For admin, show all submission notifications across all tutors
+    if (['admin', 'super_admin'].includes(session.role)) {
+      const { data, error } = await supabaseAdmin
+        .from('notifications')
+        .select('id, type, title, message, link, is_read, created_at, user_id')
+        .order('created_at', { ascending: false })
+        .limit(30)
+      if (error) throw error
+
+      // Enrich with tutor names
+      const uids = [...new Set((data ?? []).map((n: any) => n.user_id).filter(Boolean))]
+      const { data: users } = uids.length
+        ? await supabaseAdmin.from('users').select('id, name').in('id', uids)
+        : { data: [] }
+      const uMap = new Map((users ?? []).map((u: any) => [u.id, u.name]))
+
+      const enriched = (data ?? []).map((n: any) => ({
+        ...n,
+        tutor_name: uMap.get(n.user_id) ?? null,
+      }))
+
+      const unread = enriched.filter((n: any) => !n.is_read).length
+      return NextResponse.json({ notifications: enriched, unread })
+    }
+
+    // For educator, show only their notifications
+    const { data, error } = await supabaseAdmin
+      .from('notifications')
+      .select('id, type, title, message, link, is_read, created_at')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+      .limit(20)
+    if (error) throw error
+
+    const unread = (data ?? []).filter((n: any) => !n.is_read).length
+    return NextResponse.json({ notifications: data ?? [], unread })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}
+
+export async function PUT(req: NextRequest) {
+  try {
+    const session = await requireRole(['admin', 'super_admin', 'educator'])
+    const { action, id } = await req.json()
+
+    if (action === 'read' && id) {
+      await supabaseAdmin.from('notifications').update({ is_read: true }).eq('id', id)
+      return NextResponse.json({ ok: true })
+    }
+
+    if (action === 'read_all') {
+      if (['admin', 'super_admin'].includes(session.role)) {
+        await supabaseAdmin.from('notifications').update({ is_read: true }).eq('is_read', false)
+      } else {
+        await supabaseAdmin.from('notifications').update({ is_read: true }).eq('user_id', session.id).eq('is_read', false)
+      }
+      return NextResponse.json({ ok: true })
+    }
+
+    return NextResponse.json({ error: 'Unknown action' }, { status: 400 })
+  } catch (e: any) {
+    return NextResponse.json({ error: e.message }, { status: 500 })
+  }
+}
+`)
+
+// ═══ 2. TOPBAR WITH LIVE BELL ════════════════════════════════
+console.log('[2/2] Topbar…')
+w('components/layout/topbar.tsx', `'use client'
 import { SessionUser } from '@/types'
 import { Bell, Calendar, Check, CheckCheck, X } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
@@ -149,21 +236,21 @@ export function Topbar({ user, title, subtitle }: TopbarProps) {
                       {notifs.map((n: any) => (
                         <button key={n.id}
                           onClick={() => { if (!n.is_read) markRead(n.id) }}
-                          className={`w-full text-left px-4 py-3 flex items-start gap-3 transition ${
+                          className={\`w-full text-left px-4 py-3 flex items-start gap-3 transition \${
                             n.is_read ? 'bg-white hover:bg-slate-50' : 'bg-amber-50/40 hover:bg-amber-50/70'
-                          }`}>
+                          }\`}>
 
                           {/* Icon */}
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm ${
+                          <div className={\`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm \${
                             n.is_read ? 'bg-slate-100' : 'bg-amber-100'
-                          }`}>
+                          }\`}>
                             {typeIcon[n.type] ?? '🔔'}
                           </div>
 
                           {/* Content */}
                           <div className="flex-1 min-w-0">
                             <div className="flex items-start justify-between gap-2">
-                              <p className={`text-[12px] leading-snug ${n.is_read ? 'text-slate-500' : 'text-slate-800 font-semibold'}`}>
+                              <p className={\`text-[12px] leading-snug \${n.is_read ? 'text-slate-500' : 'text-slate-800 font-semibold'}\`}>
                                 {n.message ?? n.title}
                               </p>
                               {!n.is_read && (
@@ -205,3 +292,18 @@ export function Topbar({ user, title, subtitle }: TopbarProps) {
     </header>
   )
 }
+`)
+
+console.log('\n━━━ DONE ━━━')
+console.log('Run: npm run dev\n')
+console.log('Notification bell now:')
+console.log('  ✓ Shows real unread count badge (red circle with number)')
+console.log('  ✓ Polls /api/notifications every 30 seconds for new alerts')
+console.log('  ✓ Dropdown shows all notifications with type icons')
+console.log('  ✓ Unread items highlighted in amber background')
+console.log('  ✓ Click to mark individual as read (amber dot disappears)')
+console.log('  ✓ "Mark all read" button clears everything at once')
+console.log('  ✓ Shows relative time (just now, 5m ago, 2h ago, 3d ago)')
+console.log('  ✓ Admin sees all notifications + tutor name')
+console.log('  ✓ Educator sees only their own notifications')
+console.log('  ✓ Empty state when no notifications')
