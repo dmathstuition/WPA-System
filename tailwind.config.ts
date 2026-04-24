@@ -5,8 +5,8 @@ const config: Config = {
   content: [
     "./pages/**/*.{ts,tsx}",
     "./components/**/*.{ts,tsx}",
-    "./app/**/*.{ts,tsx}",
-    "./lib/**/*.{ts,tsx}",
+    "./app/**/*.{ts,tsx}",       
+    "./lib/**/*.{ts,tsx}", 
   ],
   theme: {
     container: { center: true, padding: "2rem", screens: { "2xl": "1400px" } },

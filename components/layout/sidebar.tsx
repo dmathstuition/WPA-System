@@ -1,6 +1,6 @@
 'use client'
 import Link from 'next/link'
-import { usePathname, useRouter } from 'next/navigation'
+import { usePathname } from 'next/navigation'
 import { SessionUser } from '@/types'
 import { useState, useEffect } from 'react'
 import {
@@ -30,7 +30,7 @@ export function Sidebar({ user }: { user: SessionUser }) {
   const pathname = usePathname()
   const [collapsed, setCollapsed] = useState(false)
   const [mobileOpen, setMobileOpen] = useState(false)
-  const [showLogout, setShowLogout] = useState(false)
+  const [showLogoutModal, setShowLogoutModal] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
   const nav = getNav(user.role)
 
@@ -43,11 +43,11 @@ export function Sidebar({ user }: { user: SessionUser }) {
     localStorage.setItem('wpa_sb', n ? '1' : '0')
   }
 
-  async function doLogout() {
+  function doLogout() {
     setLoggingOut(true)
-    await fetch('/api/auth/logout', { method: 'POST' })
-    // Replace history so back button can't return to protected pages
-    window.location.replace('/login')
+    // Use GET redirect — no fetch that can fail, no race condition
+    // The server clears the cookie and redirects to /login
+    window.location.href = '/api/auth/logout'
   }
 
   const Inner = () => (
@@ -111,16 +111,16 @@ export function Sidebar({ user }: { user: SessionUser }) {
             <div className="flex-1 min-w-0 flex items-center justify-between gap-2">
               <div className="min-w-0">
                 <p className="text-[11.5px] font-semibold text-white truncate">{user.name}</p>
-                <p className="text-[9.5px] text-slate-500">{user.role === 'super_admin' ? 'Admin' : user.role === 'admin' ? 'Admin' : 'Educator'}</p>
+                <p className="text-[9.5px] text-slate-500">{user.role === 'super_admin' || user.role === 'admin' ? 'Admin' : 'Educator'}</p>
               </div>
-              <button onClick={() => setShowLogout(true)} title="Sign out" className="text-slate-600 hover:text-red-400 transition">
+              <button onClick={() => setShowLogoutModal(true)} title="Sign out" className="text-slate-600 hover:text-red-400 transition">
                 <LogOut size={14} />
               </button>
             </div>
           )}
         </div>
         {collapsed && (
-          <button onClick={() => setShowLogout(true)} title="Sign out"
+          <button onClick={() => setShowLogoutModal(true)} title="Sign out"
             className="mt-2 w-full flex items-center justify-center py-1.5 text-slate-600 hover:text-red-400 rounded-lg hover:bg-white/5 transition">
             <LogOut size={13} />
           </button>
@@ -131,52 +131,33 @@ export function Sidebar({ user }: { user: SessionUser }) {
 
   return (
     <>
-      {/* Mobile hamburger */}
-      <button onClick={() => setMobileOpen(true)}
-        className="lg:hidden fixed top-3 left-3 z-50 w-8 h-8 rounded-lg bg-slate-900 shadow-lg flex items-center justify-center text-slate-300">
-        <Menu size={15} />
-      </button>
-
-      {/* Mobile overlay */}
+      <button onClick={() => setMobileOpen(true)} className="lg:hidden fixed top-3 left-3 z-50 w-8 h-8 rounded-lg bg-slate-900 shadow-lg flex items-center justify-center text-slate-300"><Menu size={15} /></button>
       {mobileOpen && <div className="fixed inset-0 bg-black/70 z-40 lg:hidden" onClick={() => setMobileOpen(false)} />}
       {mobileOpen && <div className="fixed inset-y-0 left-0 z-50 w-[218px] lg:hidden"><Inner /></div>}
+      <div className={`hidden lg:block fixed inset-y-0 left-0 z-40 transition-[width] duration-200 ${collapsed ? 'w-14' : 'w-[218px]'}`}><Inner /></div>
 
-      {/* Desktop sidebar */}
-      <div className={`hidden lg:block fixed inset-y-0 left-0 z-40 transition-[width] duration-200 ${collapsed ? 'w-14' : 'w-[218px]'}`}>
-        <Inner />
-      </div>
-
-      {/* ── LOGOUT CONFIRMATION MODAL ── */}
-      {showLogout && (
+      {/* Logout confirmation modal */}
+      {showLogoutModal && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
-          {/* Backdrop */}
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !loggingOut && setShowLogout(false)} />
-
-          {/* Modal */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => !loggingOut && setShowLogoutModal(false)} />
           <div className="relative bg-white rounded-2xl shadow-2xl w-full max-w-[360px] overflow-hidden">
-            {/* Close button */}
             {!loggingOut && (
-              <button onClick={() => setShowLogout(false)}
+              <button onClick={() => setShowLogoutModal(false)}
                 className="absolute right-3 top-3 w-7 h-7 rounded-lg bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-400 hover:text-slate-600 transition z-10">
                 <X size={14} />
               </button>
             )}
-
             <div className="p-7 text-center">
-              {/* Icon */}
               <div className="w-14 h-14 rounded-2xl bg-red-50 flex items-center justify-center mx-auto mb-4">
                 <LogOut size={24} className="text-red-500" />
               </div>
-
               <h3 className="text-[17px] font-black text-slate-900">Sign Out?</h3>
               <p className="text-[13px] text-slate-500 mt-1.5 leading-relaxed">
                 Are you sure you want to sign out of<br />
                 <span className="font-semibold text-slate-700">Whyte Pyramid Academy</span>?
               </p>
-
-              {/* Buttons */}
               <div className="flex gap-3 mt-6">
-                <button onClick={() => setShowLogout(false)} disabled={loggingOut}
+                <button onClick={() => setShowLogoutModal(false)} disabled={loggingOut}
                   className="flex-1 h-10 border border-slate-200 text-slate-700 font-semibold text-[13px] rounded-xl hover:bg-slate-50 transition disabled:opacity-50">
                   Cancel
                 </button>

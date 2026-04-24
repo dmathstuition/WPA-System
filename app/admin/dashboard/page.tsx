@@ -11,6 +11,8 @@ import {
 import Link from 'next/link'
 
 async function getData() {
+  // Auto-update missed submissions
+  try { await fetch((process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000') + '/api/cron/check-missed') } catch {}
   const today = new Date().toISOString().split('T')[0]
   const [
     { count: learnerCount },
