@@ -8,6 +8,7 @@ import { Topbar } from '@/components/layout/topbar'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Calendar, ChevronLeft, ChevronRight, Plus, X, Lock, ClipboardList } from 'lucide-react'
 import Link from 'next/link'
+import { CopyLessonButton } from '@/components/shared/copy-lesson-button'
 import { fetchArray, postJSON } from '@/lib/fetch'
 
 function isoDate(d: Date) { return d.toISOString().split('T')[0] }
@@ -330,7 +331,8 @@ export default function EducatorLessonsPage() {
                               {l.class_groups && <Badge variant="purple">Arm {l.class_groups.name}</Badge>}
                             </div>
                             <div className="flex items-center gap-2 mt-3">
-                              <Link href={'/educator/lessons/' + l.id + '/attendance'}>
+                              <CopyLessonButton lessonId={l.id} />
+                    <Link href={'/educator/lessons/' + l.id + '/attendance'}>
                                 <Button size="sm" variant={l.attendance_locked ? 'outline' : 'default'}>
                                   {l.attendance_locked ? 'View Attendance' : 'Mark Attendance'}
                                 </Button>

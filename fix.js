@@ -1,4 +1,9 @@
-import { NextRequest, NextResponse } from 'next/server'
+const fs = require('fs')
+const path = require('path')
+function w(p,c){const d=path.dirname(p);if(!fs.existsSync(d))fs.mkdirSync(d,{recursive:true});fs.writeFileSync(p,c,'utf8');console.log('  ✓',p)}
+
+// Rewrite the learners GET API to properly join users, year_levels, class_groups
+w('app/api/admin/learners/route.ts', `import { NextRequest, NextResponse } from 'next/server'
 import { requireRole } from '@/lib/auth'
 import { supabaseAdmin } from '@/lib/supabase'
 import bcrypt from 'bcryptjs'
@@ -166,3 +171,12 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ ok: true })
   } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }) }
 }
+`)
+
+console.log('\nDone. The API now joins users, year_levels, and class_groups.')
+console.log('Each learner row returns: name, email, year_name, group_name')
+console.log('')
+console.log('Run:')
+console.log('  git add -A')
+console.log('  git commit -m "Fix learners API: join user/year/group names"')
+console.log('  git push')

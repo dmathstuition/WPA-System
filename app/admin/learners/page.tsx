@@ -4,204 +4,225 @@ import { Topbar } from '@/components/layout/topbar'
 import { PageHeader } from '@/components/shared/page-header'
 import { EmptyState } from '@/components/shared/empty-state'
 import { Badge } from '@/components/ui/badge'
-import { Input } from '@/components/ui/input'
-import { Users, Search, Pencil, Lock, Unlock, X, User } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Users, Search, Pencil, Trash2, CheckSquare, Square, ArrowRight } from 'lucide-react'
 import Link from 'next/link'
 import { fetchArray, postJSON } from '@/lib/fetch'
 
-function initials(name: string) {
-  return (name ?? '?').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
-}
+function initials(n: string) { return (n??'?').split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) }
 
 export default function LearnersPage() {
-  const [rows, setRows]       = useState<any[]>([])
-  const [years, setYears]     = useState<any[]>([])
-  const [search, setSearch]   = useState('')
-  const [filterYear, setFY]   = useState('')
-  const [filterType, setFT]   = useState('')
-  const [loading, setLoading] = useState(true)
-  const [msg, setMsg]         = useState('')
+  const [rows, setRows]               = useState<any[]>([])
+  const [yearLevels, setYears]         = useState<any[]>([])
+  const [classGroups, setGroups]       = useState<any[]>([])
+  const [search, setSearch]            = useState('')
+  const [filterYear, setFilterYear]    = useState('')
+  const [filterGroup, setFilterGroup]  = useState('')
+  const [filterType, setFilterType]    = useState('')
+  const [loading, setLoading]          = useState(true)
+  const [selected, setSelected]        = useState<Set<string>>(new Set())
+  const [showBulk, setShowBulk]        = useState(false)
+  const [bulkYear, setBulkYear]        = useState('')
+  const [bulkGroup, setBulkGroup]      = useState('')
+  const [bulkSaving, setBulkSaving]    = useState(false)
+  const [bulkMsg, setBulkMsg]          = useState('')
+  const [deleting, setDeleting]        = useState('')
 
   const load = useCallback(async () => {
-    setLoading(true); setMsg('')
+    setLoading(true)
     const p = new URLSearchParams()
-    if (search)     p.set('search', search)
+    if (search) p.set('search', search)
     if (filterYear) p.set('year_level_id', filterYear)
-    if (filterType) p.set('lesson_type', filterType)
-    const data = await fetchArray('/api/admin/learners?' + p.toString())
-    setRows(data)
-    setLoading(false)
-  }, [search, filterYear, filterType])
+    if (filterGroup) p.set('class_group_id', filterGroup)
+    fetchArray('/api/admin/learners?' + p).then(d => {
+      let filtered = d
+      if (filterType) filtered = d.filter((r: any) => r.lesson_type === filterType)
+      setRows(filtered)
+      setLoading(false)
+    })
+  }, [search, filterYear, filterGroup, filterType])
 
-  useEffect(() => { fetchArray('/api/admin/year-levels').then(setYears) }, [])
-  useEffect(() => { const t = setTimeout(load, 300); return () => clearTimeout(t) }, [load])
+  useEffect(() => {
+    fetchArray('/api/admin/year-levels').then(setYears)
+    fetchArray('/api/admin/class-groups').then(setGroups)
+  }, [])
+  useEffect(() => { load() }, [load])
 
-  async function toggleActive(row: any) {
-    await postJSON('/api/admin/learners', { id: row.id, is_active: !row.users?.is_active }, 'PUT')
+  function toggleSelect(id: string) {
+    setSelected(s => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
+  }
+  function toggleAll() {
+    if (selected.size === rows.length) setSelected(new Set())
+    else setSelected(new Set(rows.map(r => r.id)))
+  }
+
+  async function bulkMove() {
+    if (!bulkYear) { setBulkMsg('Select a year level'); return }
+    setBulkSaving(true); setBulkMsg('')
+    let ok = 0, fail = 0
+    for (const id of selected) {
+      const { ok: success } = await postJSON('/api/admin/learners', {
+        id, year_level_id: bulkYear, class_group_id: bulkGroup || undefined, action: 'update_class'
+      }, 'PUT')
+      success ? ok++ : fail++
+    }
+    setBulkMsg(ok + ' moved' + (fail ? ', ' + fail + ' failed' : ''))
+    setBulkSaving(false)
+    setSelected(new Set())
+    setTimeout(() => { setBulkMsg(''); setShowBulk(false) }, 2000)
     load()
   }
 
-  const statusVar: Record<string, any> = {
-    active: 'success', inactive: 'secondary', suspended: 'destructive'
+  async function deleteLearner(id: string) {
+    if (!confirm('Delete this learner permanently?')) return
+    setDeleting(id)
+    await postJSON('/api/admin/learners', { id }, 'DELETE')
+    setDeleting('')
+    load()
   }
-  const total   = rows.length
-  const general = rows.filter(r => (r.lesson_type ?? 'general') !== 'one_to_one').length
-  const oto     = rows.filter(r => r.lesson_type === 'one_to_one').length
+
+  const filtered = rows
 
   return (
     <>
-      <Topbar user={{ id:'', name:'Admin', email:'', role:'admin' }}
-              title="Learners" subtitle="Manage all learner accounts" />
+      <Topbar user={{id:'',name:'Admin',email:'',role:'admin'}} title="Learners" subtitle={loading ? 'Loading…' : filtered.length + ' learner' + (filtered.length!==1?'s':'')} />
       <div className="p-5">
-        <PageHeader title="Learners" count={total}
-          secondaryAction={{ label:'Import CSV', href:'/admin/import/learners' }}
-          action={{ label:'Add Learner', href:'/admin/learners/new' }} />
+        <PageHeader title="Learners" count={filtered.length}
+          secondaryAction={{ label: 'Import CSV', href: '/admin/import/learners' }}
+          action={{ label: 'Add Learner', href: '/admin/learners/new' }} />
 
-        {/* Type pills */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {[
-            { val:'',           label:'All ('     + total   + ')', active: filterType === '' },
-            { val:'general',    label:'General (' + general + ')', active: filterType === 'general' },
-            { val:'one_to_one', label:'1:1 ('     + oto     + ')', active: filterType === 'one_to_one' },
-          ].map(({ val, label, active }) => (
-            <button key={val} onClick={() => setFT(val)}
-              className={`px-3.5 py-1.5 rounded-full text-[11.5px] font-semibold border transition ${
-                active
-                  ? val === 'one_to_one' ? 'bg-purple-500 text-white border-purple-500'
-                    : val === 'general'  ? 'bg-amber-500 text-white border-amber-500'
-                    : 'bg-slate-800 text-white border-slate-800'
-                  : 'bg-white border-slate-200 text-slate-600 hover:border-slate-400'
-              }`}>
-              {label}
-            </button>
-          ))}
-        </div>
-
-        {/* Filters */}
-        <div className="flex flex-wrap gap-3 mb-5 items-center">
-          <div className="relative flex-1 min-w-[200px] max-w-[300px]">
-            <Search size={13} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-            <Input placeholder="Name, email, admission no…" className="pl-8"
-                   value={search} onChange={e => setSearch(e.target.value)} />
+        {/* Search + Filters */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="relative flex-1 min-w-[200px] max-w-xs">
+            <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+            <input type="text" placeholder="Search by name…" value={search} onChange={e => setSearch(e.target.value)}
+              className="w-full h-8 pl-9 pr-3 rounded-lg border border-slate-200 text-[12px] focus:outline-none focus:border-orange-400 focus:ring-1 focus:ring-orange-100" />
           </div>
-          <select value={filterYear} onChange={e => setFY(e.target.value)}
-            className="h-9 rounded-lg border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[150px]">
+          <select value={filterYear} onChange={e => setFilterYear(e.target.value)}
+            className="h-8 px-2 rounded-lg border border-slate-200 text-[12px] bg-white focus:outline-none focus:border-orange-400">
             <option value="">All Years</option>
-            {years.map((y: any) => <option key={y.id} value={y.id}>{y.name}</option>)}
+            {yearLevels.map((y: any) => <option key={y.id} value={y.id}>{y.name}</option>)}
           </select>
-          {(search || filterYear || filterType) && (
-            <button onClick={() => { setSearch(''); setFY(''); setFT('') }}
-              className="w-8 h-8 flex items-center justify-center rounded-lg border border-slate-200 text-slate-400 hover:text-red-500 hover:border-red-200 transition">
-              <X size={14} />
-            </button>
+          <select value={filterGroup} onChange={e => setFilterGroup(e.target.value)}
+            className="h-8 px-2 rounded-lg border border-slate-200 text-[12px] bg-white focus:outline-none focus:border-orange-400">
+            <option value="">All Arms</option>
+            {classGroups.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+          </select>
+          <select value={filterType} onChange={e => setFilterType(e.target.value)}
+            className="h-8 px-2 rounded-lg border border-slate-200 text-[12px] bg-white focus:outline-none focus:border-orange-400">
+            <option value="">All Types</option>
+            <option value="general">General</option>
+            <option value="one_to_one">1:1 Private</option>
+          </select>
+          {(search || filterYear || filterGroup || filterType) && (
+            <button onClick={() => { setSearch(''); setFilterYear(''); setFilterGroup(''); setFilterType('') }}
+              className="text-[11px] text-slate-500 hover:text-red-500 font-medium px-2">Clear filters</button>
           )}
         </div>
 
-        {msg && <p className="text-[12px] text-red-500 mb-3">{msg}</p>}
-
-        <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-          {loading ? (
-            <div className="py-12 text-center">
-              <div className="w-6 h-6 border-2 border-amber-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
-              <p className="text-[12px] text-slate-400">Loading learners…</p>
+        {/* Bulk action bar */}
+        {selected.size > 0 && (
+          <div className="mb-4 bg-orange-50 border border-orange-200 rounded-lg px-4 py-2.5 flex items-center justify-between flex-wrap gap-2">
+            <span className="text-[12px] font-semibold text-orange-800">{selected.size} learner{selected.size > 1 ? 's' : ''} selected</span>
+            <div className="flex items-center gap-2">
+              <button onClick={() => setShowBulk(!showBulk)}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-orange-600 text-white text-[11.5px] font-medium rounded-lg hover:bg-orange-700 transition">
+                <ArrowRight size={12} /> Move to class
+              </button>
+              <button onClick={() => setSelected(new Set())} className="text-[11px] text-orange-600 hover:text-orange-800 font-medium">Deselect all</button>
             </div>
-          ) : rows.length === 0 ? (
-            <EmptyState message="No learners found." icon={<Users size={20} />} />
-          ) : (
+          </div>
+        )}
+
+        {/* Bulk move panel */}
+        {showBulk && selected.size > 0 && (
+          <div className="mb-4 bg-white border border-slate-200 rounded-lg p-4">
+            <p className="text-[12.5px] font-semibold text-slate-800 mb-3">Move {selected.size} learner{selected.size > 1 ? 's' : ''} to:</p>
+            <div className="flex items-end gap-3 flex-wrap">
+              <div>
+                <label className="text-[10.5px] text-slate-500 font-medium">Year Level *</label>
+                <select value={bulkYear} onChange={e => setBulkYear(e.target.value)}
+                  className="block mt-1 h-8 px-2 rounded-lg border border-slate-200 text-[12px] bg-white">
+                  <option value="">— Select —</option>
+                  {yearLevels.map((y: any) => <option key={y.id} value={y.id}>{y.name}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10.5px] text-slate-500 font-medium">Class Arm</label>
+                <select value={bulkGroup} onChange={e => setBulkGroup(e.target.value)}
+                  className="block mt-1 h-8 px-2 rounded-lg border border-slate-200 text-[12px] bg-white">
+                  <option value="">— None —</option>
+                  {classGroups.map((g: any) => <option key={g.id} value={g.id}>{g.name}</option>)}
+                </select>
+              </div>
+              <Button size="sm" onClick={bulkMove} disabled={bulkSaving}>{bulkSaving ? 'Moving…' : 'Apply'}</Button>
+              <button onClick={() => setShowBulk(false)} className="text-[11px] text-slate-500 hover:text-slate-700">Cancel</button>
+            </div>
+            {bulkMsg && <p className="mt-2 text-[11.5px] text-emerald-600 font-medium">{bulkMsg}</p>}
+          </div>
+        )}
+
+        {/* Table */}
+        {loading ? (
+          <div className="py-14 text-center">
+            <div className="w-6 h-6 border-2 border-orange-500 border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+            <p className="text-[12px] text-slate-400">Loading…</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <EmptyState message="No learners found." icon={<Users size={20} />} />
+        ) : (
+          <div className="bg-white rounded-lg border border-slate-200/60 overflow-hidden">
             <div className="overflow-x-auto">
               <table className="w-full text-[12px]">
                 <thead>
-                  <tr>
-                    {['Name','Type','Year / Tutor','Arm','Exam Group','Admission No.','Status',''].map(h => (
-                      <th key={h} className="px-4 py-2.5 text-left text-[10.5px] font-bold uppercase tracking-wide text-slate-400 bg-slate-50 whitespace-nowrap">{h}</th>
+                  <tr className="bg-slate-50 border-b border-slate-100">
+                    <th className="pl-4 pr-1 py-2.5 text-left w-8">
+                      <button onClick={toggleAll} className="text-slate-400 hover:text-slate-600">
+                        {selected.size === rows.length && rows.length > 0 ? <CheckSquare size={15} /> : <Square size={15} />}
+                      </button>
+                    </th>
+                    {['Name','Year','Arm','Type','Status',''].map(h => (
+                      <th key={h} className="px-3 py-2.5 text-left text-[10px] font-semibold uppercase tracking-wider text-slate-400 whitespace-nowrap">{h}</th>
                     ))}
                   </tr>
                 </thead>
-                <tbody>
-                  {rows.map((r: any) => {
-                    const isOTO = r.lesson_type === 'one_to_one'
-                    const name  = r.users?.name ?? '—'
-                    return (
-                      <tr key={r.id} className="border-t border-slate-50 hover:bg-slate-50/50 transition-colors">
-
-                        {/* Name + email */}
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${
-                              isOTO ? 'bg-gradient-to-br from-purple-400 to-purple-600'
-                                    : 'bg-gradient-to-br from-amber-400 to-orange-500'
-                            }`}>{initials(name)}</div>
-                            <div>
-                              <p className="font-semibold text-slate-800 leading-tight">{name}</p>
-                              <p className="text-[10.5px] text-slate-400">{r.users?.email}</p>
-                            </div>
+                <tbody className="divide-y divide-slate-50">
+                  {filtered.map((r: any) => (
+                    <tr key={r.id} className={`hover:bg-slate-50/60 ${selected.has(r.id) ? 'bg-orange-50/30' : ''}`}>
+                      <td className="pl-4 pr-1 py-2.5">
+                        <button onClick={() => toggleSelect(r.id)} className="text-slate-400 hover:text-orange-600">
+                          {selected.has(r.id) ? <CheckSquare size={15} className="text-orange-600" /> : <Square size={15} />}
+                        </button>
+                      </td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-2.5">
+                          <div className="w-7 h-7 rounded-full bg-slate-700 flex items-center justify-center text-white text-[9px] font-semibold flex-shrink-0">
+                            {initials(r.name ?? r.user?.name ?? '?')}
                           </div>
-                        </td>
-
-                        {/* Type badge */}
-                        <td className="px-4 py-2.5">
-                          {isOTO
-                            ? <Badge variant="purple" className="gap-1"><User size={9} />1:1</Badge>
-                            : <Badge variant="info" className="gap-1"><Users size={9} />General</Badge>}
-                        </td>
-
-                        {/* Year level OR tutor */}
-                        <td className="px-4 py-2.5">
-                          {isOTO
-                            ? r.tutor_name
-                              ? <span className="text-[11.5px] font-semibold text-purple-700">{r.tutor_name}</span>
-                              : <span className="text-[11px] text-amber-500 font-medium">No tutor</span>
-                            : r.year_levels?.name
-                              ? <Badge variant="info">{r.year_levels.name}</Badge>
-                              : <span className="text-slate-400">—</span>}
-                        </td>
-
-                        {/* Arm */}
-                        <td className="px-4 py-2.5">
-                          {r.class_groups?.name
-                            ? <Badge variant="purple">Arm {r.class_groups.name}</Badge>
-                            : <span className="text-slate-400">—</span>}
-                        </td>
-
-                        {/* Exam group */}
-                        <td className="px-4 py-2.5">
-                          {r.exam_groups?.name
-                            ? <Badge variant="warning">{r.exam_groups.name}</Badge>
-                            : <span className="text-slate-400">—</span>}
-                        </td>
-
-                        {/* Admission */}
-                        <td className="px-4 py-2.5 font-mono text-slate-500 text-[11px]">
-                          {r.admission_number ?? '—'}
-                        </td>
-
-                        {/* Status */}
-                        <td className="px-4 py-2.5">
-                          <Badge variant={statusVar[r.status] ?? 'secondary'}>{r.status}</Badge>
-                        </td>
-
-                        {/* Actions */}
-                        <td className="px-4 py-2.5">
-                          <div className="flex items-center gap-1">
-                            <Link href={'/admin/learners/' + r.id}
-                              className="p-1.5 rounded hover:bg-blue-50 text-blue-500 transition"
-                              title="Edit">
-                              <Pencil size={13} />
-                            </Link>
-                            <button onClick={() => toggleActive(r)} title={r.users?.is_active ? 'Lock account' : 'Unlock account'}
-                              className={`p-1.5 rounded transition ${r.users?.is_active ? 'hover:bg-amber-50 text-amber-500' : 'hover:bg-emerald-50 text-emerald-500'}`}>
-                              {r.users?.is_active ? <Lock size={13} /> : <Unlock size={13} />}
-                            </button>
+                          <div className="min-w-0">
+                            <p className="font-medium text-slate-800 truncate">{r.name ?? r.user?.name ?? '—'}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{r.email ?? r.user?.email ?? r.admission_number ?? ''}</p>
                           </div>
-                        </td>
-                      </tr>
-                    )
-                  })}
+                        </div>
+                      </td>
+                      <td className="px-3 py-2.5 text-slate-600">{r.year_name ?? r.year_level?.name ?? '—'}</td>
+                      <td className="px-3 py-2.5 text-slate-600">{r.group_name ?? r.class_group?.name ?? '—'}</td>
+                      <td className="px-3 py-2.5"><Badge variant={r.lesson_type === 'one_to_one' ? 'purple' : 'info'}>{r.lesson_type === 'one_to_one' ? '1:1' : 'General'}</Badge></td>
+                      <td className="px-3 py-2.5"><Badge variant={r.status === 'active' ? 'success' : 'secondary'}>{r.status}</Badge></td>
+                      <td className="px-3 py-2.5">
+                        <div className="flex items-center gap-1">
+                          <Link href={'/admin/learners/' + r.id} className="p-1.5 text-slate-400 hover:text-orange-600 rounded hover:bg-orange-50 transition"><Pencil size={13} /></Link>
+                          <button onClick={() => deleteLearner(r.id)} disabled={deleting === r.id}
+                            className="p-1.5 text-slate-400 hover:text-red-500 rounded hover:bg-red-50 transition disabled:opacity-50"><Trash2 size={13} /></button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </>
   )
