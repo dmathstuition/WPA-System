@@ -7,6 +7,7 @@ import { StatCard } from '@/components/shared/stat-card'
 import { Badge } from '@/components/ui/badge'
 import { Users, Calendar, ClipboardList, AlertTriangle, User, BookOpen } from 'lucide-react'
 import Link from 'next/link'
+import { EducatorCharts } from '@/components/charts/educator-charts'
 
 async function getData(userId: string) {
   const { data: edu } = await supabaseAdmin
@@ -15,7 +16,6 @@ async function getData(userId: string) {
   const eid = edu.id
   const today = new Date().toISOString().split('T')[0]
 
-  // Assigned classes
   const { data: eduClasses } = await supabaseAdmin
     .from('educator_classes').select('id,year_level_id,class_group_id,lesson_type,subject_id').eq('educator_id', eid)
   const classes = eduClasses ?? []
@@ -34,7 +34,6 @@ async function getData(userId: string) {
     ...c, year_levels: yM.get(c.year_level_id) ?? null, class_groups: gM.get(c.class_group_id) ?? null, subject: sM.get(c.subject_id) ?? null,
   }))
 
-  // Learners per class
   const learnersByClass: Record<string, any[]> = {}
   for (const cls of enrichedClasses) {
     let lrns: any[] = []
@@ -52,7 +51,6 @@ async function getData(userId: string) {
       const uids = lrns.map((l: any) => l.user_id).filter(Boolean)
       const { data: users } = uids.length ? await supabaseAdmin.from('users').select('id,name').in('id', uids) : { data: [] }
       const uM = new Map((users ?? []).map((u: any) => [u.id, u]))
-      // For 1:1 get subject names
       const lSubIds = [...new Set(lrns.map((l: any) => l.subject_id).filter(Boolean))]
       const { data: lSubs } = lSubIds.length ? await supabaseAdmin.from('subjects').select('id,name').in('id', lSubIds) : { data: [] }
       const lsM = new Map((lSubs ?? []).map((s: any) => [s.id, s]))
@@ -62,7 +60,6 @@ async function getData(userId: string) {
     }
   }
 
-  // Today's lessons
   const { data: leRows } = await supabaseAdmin.from('lesson_educators').select('lesson_id').eq('educator_id', eid)
   const lessonIds = (leRows ?? []).map((r: any) => r.lesson_id)
   const { data: todayL } = lessonIds.length
@@ -72,7 +69,6 @@ async function getData(userId: string) {
   const tsM = new Map((tSubs ?? []).map((s: any) => [s.id, s]))
   const todayLessons = (todayL ?? []).map((l: any) => ({ ...l, subject: tsM.get(l.subject_id) ?? null }))
 
-  // Submissions
   const { data: aIds } = await supabaseAdmin.from('assignments').select('id').eq('educator_id', eid)
   const assignIds = (aIds ?? []).map((a: any) => a.id)
   const { data: recentSubs } = assignIds.length
@@ -83,13 +79,12 @@ async function getData(userId: string) {
   const slUids = (subLrns ?? []).map((l: any) => l.user_id).filter(Boolean)
   const { data: slUsers } = slUids.length ? await supabaseAdmin.from('users').select('id,name').in('id', slUids) : { data: [] }
   const slrM = new Map((subLrns ?? []).map((l: any) => [l.id, l.user_id]))
-  const suM = new Map((slUsers ?? []).map((u: any) => [u.id, u.name]))
-  // Get assignment titles
+  const suM2 = new Map((slUsers ?? []).map((u: any) => [u.id, u.name]))
   const subAsgIds = [...new Set((recentSubs ?? []).map((s: any) => s.assignment_id).filter(Boolean))]
   const { data: subAsgs } = subAsgIds.length ? await supabaseAdmin.from('assignments').select('id,title').in('id', subAsgIds) : { data: [] }
   const saM = new Map((subAsgs ?? []).map((a: any) => [a.id, a.title]))
   const enrichedSubs = (recentSubs ?? []).map((s: any) => ({
-    ...s, learner_name: suM.get(slrM.get(s.learner_id) ?? '') ?? '—', assignment_title: saM.get(s.assignment_id) ?? '—',
+    ...s, learner_name: suM2.get(slrM.get(s.learner_id) ?? '') ?? '—', assignment_title: saM.get(s.assignment_id) ?? '—',
   }))
 
   const totalLearners = Object.values(learnersByClass).reduce((acc, arr) => acc + arr.length, 0)
@@ -105,7 +100,6 @@ export default async function EducatorDashboard() {
 
   const data = await getData(session.id)
 
-  // If admin/super_admin lands here without educator profile, redirect back
   if (!data && ['admin', 'super_admin'].includes(session.role)) {
     redirect('/admin/dashboard')
   }
@@ -128,6 +122,7 @@ export default async function EducatorDashboard() {
       <Topbar user={session} title="Dashboard"
               subtitle={`Good ${greeting}, ${session.name.split(' ')[0]}${educator.specialization ? ' · ' + educator.specialization : ''}`} />
       <div className="p-5 space-y-5">
+        {/* Stat cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <StatCard label="My Classes"  value={enrichedClasses.length} sub="Assigned by admin"   icon={BookOpen}      color="amber" />
           <StatCard label="My Learners" value={totalLearners}          sub="Across all classes"  icon={Users}         color="blue" />
@@ -135,11 +130,12 @@ export default async function EducatorDashboard() {
           <StatCard label="Missed Work" value={missedCount}            sub="Submissions overdue" icon={AlertTriangle}  color="red" />
         </div>
 
+        {/* Today's lessons */}
         {todayLessons.length > 0 && (
-          <div className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-slate-100 flex items-center justify-between">
+          <div className="bg-white rounded-lg border border-slate-200/60 overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between">
               <p className="text-[13px] font-semibold text-slate-800">Today's Lessons</p>
-              <Link href="/educator/lessons" className="text-[11.5px] text-amber-600 hover:text-amber-700 font-medium">All lessons →</Link>
+              <Link href="/educator/lessons" className="text-[11.5px] text-orange-600 hover:text-orange-700 font-medium">All lessons →</Link>
             </div>
             <div className="divide-y divide-slate-50">
               {todayLessons.map((l: any) => (
@@ -150,7 +146,7 @@ export default async function EducatorDashboard() {
                     {l.subject && <p className="text-[11px] text-slate-400">{l.subject.name}</p>}
                   </div>
                   <Badge variant={l.attendance_locked ? 'success' : 'warning'}>{l.attendance_locked ? 'Done' : 'Mark'}</Badge>
-                  <Link href={'/educator/lessons/' + l.id + '/attendance'} className="text-[11.5px] text-amber-600 font-medium">
+                  <Link href={'/educator/lessons/' + l.id + '/attendance'} className="text-[11.5px] text-orange-600 font-medium">
                     {l.attendance_locked ? 'View →' : 'Mark →'}
                   </Link>
                 </div>
@@ -159,74 +155,87 @@ export default async function EducatorDashboard() {
           </div>
         )}
 
-        <div>
-          <p className="text-[13px] font-bold text-slate-800 mb-3">My Assigned Classes</p>
-          {enrichedClasses.length === 0 ? (
-            <div className="bg-white rounded-xl border border-slate-100 shadow-sm p-8 text-center">
-              <p className="text-[13px] text-slate-400">No classes assigned yet. Contact your administrator.</p>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {enrichedClasses.map((cls: any) => {
-                const lrns = learnersByClass[cls.id] ?? []; const isOTO = cls.lesson_type === 'one_to_one'
-                return (
-                  <div key={cls.id} className="bg-white rounded-xl border border-slate-100 shadow-sm overflow-hidden">
-                    <div className={`px-5 py-3.5 border-b flex items-center justify-between ${isOTO ? 'bg-purple-50 border-purple-100' : 'bg-amber-50 border-amber-100'}`}>
-                      <div className="flex items-center gap-3">
-                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${isOTO ? 'bg-purple-500' : 'bg-amber-500'}`}>
-                          {isOTO ? <User size={15} className="text-white"/> : <Users size={15} className="text-white"/>}
-                        </div>
-                        <div>
-                          <p className="text-[13px] font-bold text-slate-800">{cls.year_levels?.name ?? '?'}{cls.class_groups?.name ? ' · Arm ' + cls.class_groups.name : ''}</p>
-                          <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                            <Badge variant={isOTO ? 'purple' : 'info'} style={{fontSize:'9px'}}>{isOTO ? '1:1 Private' : 'General'}</Badge>
-                            {!isOTO && cls.subject && <span className="text-[10.5px] text-slate-600 font-semibold">{cls.subject.name}</span>}
-                            {isOTO && <span className="text-[10.5px] text-purple-600">Multiple subjects</span>}
+        {/* Classes + Charts side by side */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_220px] gap-4">
+          {/* Left: assigned classes */}
+          <div>
+            <p className="text-[13px] font-semibold text-slate-800 mb-3">My Assigned Classes</p>
+            {enrichedClasses.length === 0 ? (
+              <div className="bg-white rounded-lg border border-slate-200/60 p-8 text-center">
+                <p className="text-[13px] text-slate-400">No classes assigned yet. Contact your administrator.</p>
+              </div>
+            ) : (
+              <div className="space-y-3">
+                {enrichedClasses.map((cls: any) => {
+                  const lrns = learnersByClass[cls.id] ?? []; const isOTO = cls.lesson_type === 'one_to_one'
+                  return (
+                    <div key={cls.id} className="bg-white rounded-lg border border-slate-200/60 overflow-hidden">
+                      <div className={`px-5 py-3 border-b flex items-center justify-between ${isOTO ? 'bg-violet-50/50 border-violet-100' : 'bg-orange-50/50 border-orange-100'}`}>
+                        <div className="flex items-center gap-3">
+                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 ${isOTO ? 'bg-violet-500' : 'bg-orange-500'}`}>
+                            {isOTO ? <User size={14} className="text-white"/> : <Users size={14} className="text-white"/>}
+                          </div>
+                          <div>
+                            <p className="text-[12.5px] font-semibold text-slate-800">{cls.year_levels?.name ?? '?'}{cls.class_groups?.name ? ' · Arm ' + cls.class_groups.name : ''}</p>
+                            <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                              <Badge variant={isOTO ? 'purple' : 'info'}>{isOTO ? '1:1 Private' : 'General'}</Badge>
+                              {!isOTO && cls.subject && <span className="text-[10.5px] text-slate-500">{cls.subject.name}</span>}
+                              {isOTO && <span className="text-[10.5px] text-violet-600">Multiple subjects</span>}
+                            </div>
                           </div>
                         </div>
+                        <div className="flex items-center gap-3">
+                          <span className="text-[11px] text-slate-400">{lrns.length} learner{lrns.length !== 1 ? 's' : ''}</span>
+                          <Link href={'/educator/lessons?class=' + cls.id} className="text-[11px] text-orange-600 font-semibold">Lessons →</Link>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-3">
-                        <span className="text-[11px] text-slate-500">{lrns.length} learner{lrns.length !== 1 ? 's' : ''}</span>
-                        <Link href={'/educator/lessons?class=' + cls.id} className="text-[11.5px] text-amber-600 font-semibold">Lessons →</Link>
-                      </div>
-                    </div>
-                    {lrns.length === 0 ? (
-                      <p className="px-5 py-4 text-[12px] text-slate-400 italic">No learners assigned yet.</p>
-                    ) : (
-                      <div className="divide-y divide-slate-50">
-                        {lrns.map((l: any) => (
-                          <div key={l.id} className="px-5 py-3 flex items-center gap-3">
-                            <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-bold flex-shrink-0 ${isOTO ? 'bg-gradient-to-br from-purple-400 to-purple-600' : 'bg-gradient-to-br from-amber-400 to-orange-500'}`}>
-                              {(l.user?.name ?? '?').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0,2)}
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <p className="text-[12.5px] font-semibold text-slate-800 truncate">{l.user?.name ?? '—'}</p>
-                              <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                                {l.admission_number && <span className="text-[10px] text-slate-400 font-mono">{l.admission_number}</span>}
-                                {isOTO && l.subject && <Badge variant="teal" style={{fontSize:'9px',padding:'1px 6px'}}>{l.subject.name}</Badge>}
+                      {lrns.length === 0 ? (
+                        <p className="px-5 py-3.5 text-[12px] text-slate-400 italic">No learners assigned yet.</p>
+                      ) : (
+                        <div className="divide-y divide-slate-50">
+                          {lrns.map((l: any) => (
+                            <div key={l.id} className="px-5 py-2.5 flex items-center gap-3">
+                              <div className={`w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0 ${isOTO ? 'bg-violet-500' : 'bg-slate-700'}`}>
+                                {(l.user?.name ?? '?').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0,2)}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <p className="text-[12px] font-medium text-slate-800 truncate">{l.user?.name ?? '—'}</p>
+                                <div className="flex items-center gap-2 mt-0.5 flex-wrap">
+                                  {l.admission_number && <span className="text-[10px] text-slate-400 font-mono">{l.admission_number}</span>}
+                                  {isOTO && l.subject && <Badge variant="teal">{l.subject.name}</Badge>}
+                                </div>
                               </div>
                             </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          )}
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Right: charts sidebar */}
+          <EducatorCharts
+            classes={enrichedClasses}
+            learnersByClass={learnersByClass}
+            missedCount={missedCount}
+            totalLearners={totalLearners}
+          />
         </div>
 
+        {/* Recent submissions */}
         {recentSubs.length > 0 && (
-          <div className="bg-white rounded-xl border border-emerald-100 shadow-sm overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-emerald-100 bg-emerald-50/50">
-              <p className="text-[13px] font-semibold text-emerald-800">🔔 Recent Submissions</p>
+          <div className="bg-white rounded-lg border border-slate-200/60 overflow-hidden">
+            <div className="px-5 py-3 border-b border-slate-100">
+              <p className="text-[13px] font-semibold text-slate-800">Recent Submissions</p>
             </div>
             <div className="divide-y divide-slate-50">
               {recentSubs.map((s: any) => (
                 <div key={s.id} className="px-5 py-2.5 flex items-center gap-3">
-                  <div className="w-2 h-2 rounded-full bg-emerald-500 flex-shrink-0"/>
-                  <p className="flex-1 text-[12px] text-slate-700 truncate"><strong>{s.learner_name}</strong> submitted <strong>{s.assignment_title}</strong></p>
+                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 flex-shrink-0"/>
+                  <p className="flex-1 text-[12px] text-slate-700 truncate"><span className="font-medium">{s.learner_name}</span> submitted <span className="font-medium">{s.assignment_title}</span></p>
                   <span className="text-[10.5px] text-slate-400 whitespace-nowrap">{s.submitted_at ? new Date(s.submitted_at).toLocaleDateString('en-GB',{day:'2-digit',month:'short'}) : '—'}</span>
                 </div>
               ))}

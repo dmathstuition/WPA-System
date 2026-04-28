@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { EmptyState } from '@/components/shared/empty-state'
 import { ClipboardList, Plus, Copy, Check, ExternalLink, ChevronDown, ChevronUp, Trash2, Users } from 'lucide-react'
 import Link from 'next/link'
+import { ScoreSummary } from '@/components/shared/score-summary'
 import { fetchArray, postJSON } from '@/lib/fetch'
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -165,6 +166,9 @@ export default function AssignmentsPage() {
                       {isOpen ? <ChevronUp size={14} className="text-slate-400" /> : <ChevronDown size={14} className="text-slate-400" />}
                     </div>
                   </button>
+
+                  {/* Score summary */}
+                  {(a.submissions ?? []).length > 0 && <ScoreSummary submissions={a.submissions ?? []} />}
 
                   {/* Submissions table — expanded */}
                   {isOpen && (

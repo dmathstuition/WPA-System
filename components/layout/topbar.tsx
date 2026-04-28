@@ -1,205 +1,93 @@
 'use client'
 import { SessionUser } from '@/types'
-import { Bell, Calendar, Check, CheckCheck, X } from 'lucide-react'
+import { Bell, X, CheckCheck } from 'lucide-react'
 import { useState, useEffect, useCallback } from 'react'
 
-interface TopbarProps { user: SessionUser; title: string; subtitle?: string }
-
-function timeAgo(dateStr: string): string {
-  const now = Date.now()
-  const then = new Date(dateStr).getTime()
-  const diff = Math.floor((now - then) / 1000)
-  if (diff < 60) return 'just now'
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago'
-  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago'
-  if (diff < 604800) return Math.floor(diff / 86400) + 'd ago'
-  return new Date(dateStr).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })
+function timeAgo(d: string): string {
+  const s = Math.floor((Date.now() - new Date(d).getTime()) / 1000)
+  if (s < 60) return 'now'
+  if (s < 3600) return Math.floor(s/60) + 'm'
+  if (s < 86400) return Math.floor(s/3600) + 'h'
+  return Math.floor(s/86400) + 'd'
 }
 
-export function Topbar({ user, title, subtitle }: TopbarProps) {
-  const [bellOpen, setBellOpen] = useState(false)
-  const [notifs, setNotifs]     = useState<any[]>([])
-  const [unread, setUnread]     = useState(0)
-  const [loading, setLoading]   = useState(false)
-  const [time, setTime]         = useState('')
+export function Topbar({ user, title, subtitle }: { user: SessionUser; title: string; subtitle?: string }) {
+  const [open, setOpen] = useState(false)
+  const [notifs, setNotifs] = useState<any[]>([])
+  const [unread, setUnread] = useState(0)
 
-  // Live clock
-  useEffect(() => {
-    function tick() { setTime(new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })) }
-    tick()
-    const iv = setInterval(tick, 30000)
-    return () => clearInterval(iv)
-  }, [])
-
-  // Fetch notifications
-  const fetchNotifs = useCallback(async () => {
+  const load = useCallback(async () => {
     try {
-      const res = await fetch('/api/notifications')
-      if (!res.ok) return
-      const data = await res.json()
-      setNotifs(data.notifications ?? [])
-      setUnread(data.unread ?? 0)
+      const r = await fetch('/api/notifications'); if (!r.ok) return
+      const d = await r.json(); setNotifs(d.notifications ?? []); setUnread(d.unread ?? 0)
     } catch {}
   }, [])
 
-  // Poll every 30s
-  useEffect(() => {
-    fetchNotifs()
-    const iv = setInterval(fetchNotifs, 30000)
-    return () => clearInterval(iv)
-  }, [fetchNotifs])
+  useEffect(() => { load(); const iv = setInterval(load, 30000); return () => clearInterval(iv) }, [load])
 
-  // Mark single as read
   async function markRead(id: string) {
-    setNotifs(ns => ns.map(n => n.id === id ? { ...n, is_read: true } : n))
-    setUnread(u => Math.max(0, u - 1))
-    await fetch('/api/notifications', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'read', id })
-    })
+    setNotifs(n => n.map(x => x.id === id ? {...x, is_read:true} : x)); setUnread(u => Math.max(0, u-1))
+    fetch('/api/notifications', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'read',id}) })
   }
-
-  // Mark all as read
-  async function markAllRead() {
-    setNotifs(ns => ns.map(n => ({ ...n, is_read: true })))
-    setUnread(0)
-    await fetch('/api/notifications', {
-      method: 'PUT', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ action: 'read_all' })
-    })
-  }
-
-  const typeIcon: Record<string, string> = {
-    submission: '📝',
-    attendance: '✅',
-    assignment: '📋',
-    system:     '⚙️',
+  async function markAll() {
+    setNotifs(n => n.map(x => ({...x, is_read:true}))); setUnread(0)
+    fetch('/api/notifications', { method:'PUT', headers:{'Content-Type':'application/json'}, body:JSON.stringify({action:'read_all'}) })
   }
 
   return (
-    <header className="h-[56px] bg-white/80 backdrop-blur-xl border-b border-slate-100/80 flex items-center gap-3 px-5 sticky top-0 z-30 flex-shrink-0">
-      <div className="w-8 lg:hidden flex-shrink-0" />
+    <header className="h-14 bg-white border-b border-slate-200/60 flex items-center gap-4 px-6 sticky top-0 z-30">
+      <div className="w-8 lg:hidden" />
       <div className="flex-1 min-w-0">
-        <h1 className="text-[14px] font-bold text-slate-900 truncate leading-none">{title}</h1>
-        {subtitle && <p className="text-[11px] text-slate-400 mt-0.5 truncate">{subtitle}</p>}
+        <h1 className="text-[15px] font-semibold text-slate-900 tracking-[-0.01em]">{title}</h1>
+        {subtitle && <p className="text-[12px] text-slate-500 leading-none mt-0.5 truncate">{subtitle}</p>}
       </div>
-      <div className="flex items-center gap-1.5 flex-shrink-0">
-        {/* Date + clock */}
-        <div className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 bg-slate-50 rounded-lg">
-          <Calendar size={12} className="text-slate-400" />
-          <span className="text-[11px] text-slate-500 font-medium tabular-nums">
-            {new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
-          </span>
-          <span className="text-[11px] text-amber-600 font-bold tabular-nums">{time}</span>
-        </div>
 
-        {/* Notification bell */}
+      <div className="flex items-center gap-2">
+        <span className="text-[11px] text-slate-400 tabular-nums hidden sm:block">
+          {new Date().toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' })}
+        </span>
+
+        {/* Bell */}
         <div className="relative">
-          <button onClick={() => { setBellOpen(!bellOpen); if (!bellOpen) fetchNotifs() }}
-            className="w-9 h-9 rounded-xl flex items-center justify-center text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition relative">
-            <Bell size={16} />
-            {unread > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] bg-red-500 rounded-full flex items-center justify-center text-[9px] font-bold text-white ring-2 ring-white px-1">
-                {unread > 9 ? '9+' : unread}
-              </span>
-            )}
+          <button onClick={() => { setOpen(!open); if (!open) load() }}
+            className="relative w-8 h-8 rounded-lg flex items-center justify-center text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition">
+            <Bell size={16} strokeWidth={1.8} />
+            {unread > 0 && <span className="absolute top-1 right-1 w-2 h-2 bg-orange-500 rounded-full" />}
           </button>
 
-          {/* Dropdown */}
-          {bellOpen && (
+          {open && (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setBellOpen(false)} />
-              <div className="absolute right-0 top-full mt-2 w-[340px] bg-white rounded-2xl shadow-2xl border border-slate-100 z-50 overflow-hidden"
-                   style={{ maxHeight: 'calc(100vh - 100px)' }}>
-
-                {/* Header */}
-                <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between bg-slate-50/80">
-                  <div className="flex items-center gap-2">
-                    <p className="text-[13px] font-bold text-slate-800">Notifications</p>
-                    {unread > 0 && (
-                      <span className="bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">{unread}</span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-1">
-                    {unread > 0 && (
-                      <button onClick={markAllRead}
-                        className="flex items-center gap-1 px-2 py-1 text-[10.5px] font-semibold text-amber-600 hover:bg-amber-50 rounded-lg transition">
-                        <CheckCheck size={12} /> Mark all read
-                      </button>
-                    )}
-                    <button onClick={() => setBellOpen(false)}
-                      className="w-6 h-6 rounded-lg hover:bg-slate-200 flex items-center justify-center text-slate-400 transition">
-                      <X size={13} />
-                    </button>
+              <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+              <div className="absolute right-0 top-full mt-1.5 w-80 bg-white rounded-xl shadow-lg shadow-slate-200/50 border border-slate-200 z-50 overflow-hidden">
+                <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between">
+                  <span className="text-[12px] font-semibold text-slate-800">Notifications {unread > 0 && <span className="text-orange-500">({unread})</span>}</span>
+                  <div className="flex gap-1">
+                    {unread > 0 && <button onClick={markAll} className="text-[10.5px] text-orange-600 hover:text-orange-700 font-medium px-1.5 py-0.5 rounded hover:bg-orange-50 transition">Mark all read</button>}
+                    <button onClick={() => setOpen(false)} className="text-slate-400 hover:text-slate-600 p-0.5"><X size={13} /></button>
                   </div>
                 </div>
-
-                {/* List */}
-                <div className="max-h-[380px] overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
+                <div className="max-h-72 overflow-y-auto scrollbar-thin">
                   {notifs.length === 0 ? (
-                    <div className="py-10 text-center">
-                      <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center mx-auto mb-2.5">
-                        <Bell size={18} className="text-slate-300" />
+                    <div className="py-8 text-center"><p className="text-[12px] text-slate-400">No notifications</p></div>
+                  ) : notifs.map(n => (
+                    <button key={n.id} onClick={() => !n.is_read && markRead(n.id)}
+                      className={`w-full text-left px-4 py-2.5 border-b border-slate-50 flex items-start gap-2.5 transition ${n.is_read ? 'opacity-50' : 'hover:bg-slate-50'}`}>
+                      <span className={`mt-1.5 w-1.5 h-1.5 rounded-full flex-shrink-0 ${n.is_read ? 'bg-transparent' : 'bg-orange-500'}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[11.5px] text-slate-700 leading-snug">{n.message ?? n.title}</p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">{timeAgo(n.created_at)}{n.tutor_name ? ' · '+n.tutor_name : ''}</p>
                       </div>
-                      <p className="text-[12.5px] text-slate-400 font-medium">No notifications yet</p>
-                      <p className="text-[11px] text-slate-300 mt-0.5">You'll see alerts here when learners submit work</p>
-                    </div>
-                  ) : (
-                    <div className="divide-y divide-slate-50">
-                      {notifs.map((n: any) => (
-                        <button key={n.id}
-                          onClick={() => { if (!n.is_read) markRead(n.id) }}
-                          className={`w-full text-left px-4 py-3 flex items-start gap-3 transition ${
-                            n.is_read ? 'bg-white hover:bg-slate-50' : 'bg-amber-50/40 hover:bg-amber-50/70'
-                          }`}>
-
-                          {/* Icon */}
-                          <div className={`w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-sm ${
-                            n.is_read ? 'bg-slate-100' : 'bg-amber-100'
-                          }`}>
-                            {typeIcon[n.type] ?? '🔔'}
-                          </div>
-
-                          {/* Content */}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-start justify-between gap-2">
-                              <p className={`text-[12px] leading-snug ${n.is_read ? 'text-slate-500' : 'text-slate-800 font-semibold'}`}>
-                                {n.message ?? n.title}
-                              </p>
-                              {!n.is_read && (
-                                <span className="w-2 h-2 bg-amber-500 rounded-full flex-shrink-0 mt-1" />
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 mt-1">
-                              <span className="text-[10px] text-slate-400">{timeAgo(n.created_at)}</span>
-                              {n.tutor_name && (
-                                <span className="text-[10px] text-slate-400">· {n.tutor_name}</span>
-                              )}
-                            </div>
-                          </div>
-                        </button>
-                      ))}
-                    </div>
-                  )}
+                    </button>
+                  ))}
                 </div>
-
-                {/* Footer */}
-                {notifs.length > 0 && (
-                  <div className="px-4 py-2.5 border-t border-slate-100 bg-slate-50/50">
-                    <p className="text-[10.5px] text-slate-400 text-center">
-                      Showing latest {notifs.length} notification{notifs.length !== 1 ? 's' : ''}
-                    </p>
-                  </div>
-                )}
               </div>
             </>
           )}
         </div>
 
-        {/* User avatar */}
-        <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center text-white text-[10px] font-bold shadow-sm shadow-amber-500/20 cursor-default"
-          title={user.name + ' (' + user.role + ')'}>
-          {(user.name ?? '?').split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)}
+        {/* Avatar */}
+        <div className="w-7 h-7 rounded-full bg-slate-800 flex items-center justify-center text-[10px] font-semibold text-white tracking-wide" title={user.name}>
+          {(user.name??'?').split(' ').map(n=>n[0]).join('').toUpperCase().slice(0,2)}
         </div>
       </div>
     </header>

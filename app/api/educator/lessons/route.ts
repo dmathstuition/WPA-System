@@ -77,3 +77,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: e.message }, { status: 400 })
   }
 }
+
+export async function DELETE(req: NextRequest) {
+  try {
+    const session = await requireRole(['educator', 'admin', 'super_admin'])
+    const { id } = await req.json()
+    if (!id) return NextResponse.json({ error: 'ID required' }, { status: 400 })
+    const { data: lesson } = await supabaseAdmin.from('lessons')
+      .select('id, attendance_locked').eq('id', id).single()
+    if (!lesson) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+    if (lesson.attendance_locked) return NextResponse.json({ error: 'Cannot delete — attendance is locked' }, { status: 400 })
+    await supabaseAdmin.from('lesson_educators').delete().eq('lesson_id', id)
+    await supabaseAdmin.from('lessons').delete().eq('id', id)
+    return NextResponse.json({ ok: true })
+  } catch (e: any) { return NextResponse.json({ error: e.message }, { status: 500 }) }
+}

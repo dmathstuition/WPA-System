@@ -9,6 +9,9 @@ import {
   CheckCircle, ExternalLink, BookOpen
 } from 'lucide-react'
 import Link from 'next/link'
+import { ExportButtons } from '@/components/shared/export-buttons'
+import { DashboardCharts } from '@/components/charts/dashboard-charts'
+
 
 async function getData() {
   // Auto-update missed submissions
@@ -111,6 +114,9 @@ export default async function AdminDashboard() {
           <StatCard label="Assigned Today"   value={stats.tutorsAssignToday} sub="Set CBT / PDF"       icon={CheckCircle}   color="teal" />
         </div>
 
+        {/* Charts */}
+        <DashboardCharts stats={stats} tutorRows={tutorRows} />
+
         {notifs.length > 0 && (
           <div className="bg-white rounded-2xl border border-emerald-100 shadow-sm overflow-hidden">
             <div className="px-6 py-4 border-b border-emerald-100 bg-emerald-50/60 flex items-center justify-between">
@@ -201,7 +207,8 @@ export default async function AdminDashboard() {
             {href:'/admin/learners',label:'Manage Learners',sub:'View, add and assign learners',icon:'👤',color:'#3b82f6'},
             {href:'/admin/educators',label:'Manage Tutors',sub:'Assign classes and view portals',icon:'🎓',color:'#f59e0b'},
             {href:'/admin/year-levels',label:'Academic Setup',sub:'Years, arms, subjects, exams',icon:'📚',color:'#8b5cf6'},
-          ].map(({href,label,sub,icon,color}) => (
+            {href:'/admin/settings',label:'Export Data',sub:'Download CSV reports',icon:'📥',color:'#059669'},
+          ].map(({href,label,sub,icon,color}: any) => (
             <Link key={href} href={href} className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 hover:shadow-md hover:-translate-y-0.5 transition-all group">
               <div className="flex items-start gap-4">
                 <div className="w-11 h-11 rounded-xl flex items-center justify-center text-2xl flex-shrink-0" style={{background:color+'15'}}>{icon}</div>
